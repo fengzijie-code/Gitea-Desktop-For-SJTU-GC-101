@@ -34,7 +34,7 @@ export default function IssuesPage() {
       const data = await window.electronAPI.gitea.listIssues(
         account.serverUrl, account.token, info.owner, info.repo, 1, filter
       );
-      setIssues(data);
+      setIssues(Array.isArray(data) ? data : []);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -57,7 +57,7 @@ export default function IssuesPage() {
       const data = await window.electronAPI.gitea.getIssueComments(
         account.serverUrl, account.token, info.owner, info.repo, issue.number
       );
-      setComments(data);
+      setComments(Array.isArray(data) ? data : []);
     } catch (err: any) {
       setError(err.message);
     } finally {

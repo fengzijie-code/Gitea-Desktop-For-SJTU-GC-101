@@ -35,7 +35,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!currentRepo) return;
-    window.electronAPI.git.getConfig(currentRepo).then(({ name, email }) => {
+    window.electronAPI.git.getConfig(currentRepo.path).then(({ name, email }) => {
       setGitName(name);
       setGitEmail(email);
     });
@@ -46,7 +46,7 @@ export default function SettingsPage() {
     setSavingConfig(true);
     setConfigResult(null);
     try {
-      await window.electronAPI.git.setConfig(currentRepo, gitName.trim(), gitEmail.trim());
+      await window.electronAPI.git.setConfig(currentRepo.path, gitName.trim(), gitEmail.trim());
       setConfigResult({ success: true, message: 'Git identity saved successfully' });
     } catch (err: any) {
       setConfigResult({ success: false, message: err.message });
@@ -271,7 +271,7 @@ export default function SettingsPage() {
 
       <section className="settings-section">
         <h3>About</h3>
-        <p>Gitea Desktop v1.3.1</p>
+        <p>Gitea Desktop v1.4.0</p>
         <p>A desktop client for Gitea, inspired by GitHub Desktop.</p>
       </section>
     </div>

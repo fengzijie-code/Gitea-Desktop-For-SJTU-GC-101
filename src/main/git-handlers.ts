@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { execFile } from 'child_process';
 import simpleGit, { SimpleGit } from 'simple-git';
 import path from 'path';
 import fs from 'fs';
@@ -360,6 +361,19 @@ export function registerGitHandlers() {
     const { gitignoreNames } = await import('./templates/gitignore');
     const { licenseNames } = await import('./templates/license');
     return { gitignoreTemplates: gitignoreNames, licenseTemplates: licenseNames };
+  });
+
+  // The `git` executable is not bundled with the app, so check it is available on startup.
+  ipcMain.handle('git:check', async () => {
+    return await new Promise<{ installed: boolean; version?: string; error?: string }>((resolve) => {
+      execFile('git', ['--version'], { windowsHide: true }, (error, stdout) => {
+        if (error) {
+          resolve({ installed: false, error: error.message });
+        } else {
+          resolve({ installed: true, version: String(stdout).trim() });
+        }
+      });
+    });
   });
 
   ipcMain.handle('git:get-user-name', async () => {

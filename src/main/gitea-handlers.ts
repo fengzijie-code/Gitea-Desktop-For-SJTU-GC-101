@@ -1,4 +1,4 @@
-import { ipcMain, net } from 'electron';
+import { ipcMain, net, app } from 'electron';
 
 function giteaFetch(serverUrl: string, token: string, endpoint: string, options: any = {}): Promise<any> {
   const url = `${serverUrl.replace(/\/$/, '')}/api/v1${endpoint}`;
@@ -11,6 +11,11 @@ function giteaFetch(serverUrl: string, token: string, endpoint: string, options:
     request.setHeader('Authorization', `token ${token}`);
     request.setHeader('Content-Type', 'application/json');
     request.setHeader('Accept', 'application/json');
+    // Electron's default User-Agent is browser-like (Mozilla/... Chrome/... Electron/...).
+    // Some Gitea instances are fronted by an anti-bot challenge (e.g. Anubis) that serves an
+    // HTML "are you a robot?" page to browser-like clients that cannot run the JS proof-of-work,
+    // so the API never receives real JSON. A plain client identifier is passed through.
+    request.setHeader('User-Agent', `Gitea-Desktop/${app.getVersion()}`);
 
     request.on('response', (response) => {
       let data = '';
@@ -18,19 +23,27 @@ function giteaFetch(serverUrl: string, token: string, endpoint: string, options:
         data += chunk.toString();
       });
       response.on('end', () => {
+        const status = response.statusCode || 0;
+        let parsed: any;
         try {
-          const parsed = JSON.parse(data);
-          if (response.statusCode && response.statusCode >= 400) {
-            reject(new Error(parsed.message || `HTTP ${response.statusCode}`));
-          } else {
-            resolve(parsed);
-          }
+          parsed = JSON.parse(data);
         } catch {
-          if (response.statusCode && response.statusCode >= 400) {
-            reject(new Error(`HTTP ${response.statusCode}`));
+          // Never hand a non-JSON body back to the renderer: it would be treated as a
+          // successful result and crash list rendering (e.g. `issues.map is not a function`).
+          if (status >= 400) {
+            reject(new Error(`HTTP ${status}`));
           } else {
-            resolve(data);
+            reject(new Error(
+              `Gitea 返回了非 JSON 响应（HTTP ${status}）。` +
+              `可能被服务器前置的人机验证/反爬（如 Anubis）拦截，或 server URL 配置有误。`
+            ));
           }
+          return;
+        }
+        if (status >= 400) {
+          reject(new Error(parsed.message || `HTTP ${status}`));
+        } else {
+          resolve(parsed);
         }
       });
     });

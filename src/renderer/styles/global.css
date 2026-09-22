@@ -278,6 +278,38 @@ body {
   line-height: 1;
 }
 
+.git-warning-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(249, 226, 175, 0.15);
+  border-bottom: 1px solid var(--yellow);
+  color: var(--yellow);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.git-warning-banner .error-banner-text {
+  white-space: normal;
+}
+
+.git-warning-banner button {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--yellow);
+  color: var(--yellow);
+  border-radius: var(--radius);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.git-warning-banner button:hover {
+  background: rgba(249, 226, 175, 0.15);
+}
+
 .page-empty {
   display: flex;
   align-items: center;

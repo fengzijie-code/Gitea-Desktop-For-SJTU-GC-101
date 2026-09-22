@@ -26,8 +26,8 @@ As a GC engr101 student, our homework and project are all upload onto Focs Gitea
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) v18 or later
-- [Git](https://git-scm.com/) installed and available in your system PATH
+- [Git](https://git-scm.com/) installed and available in your system PATH — **required at runtime**. Gitea Desktop shells out to the `git` executable for every Git operation, and `git` is **not** bundled in the installer. The app checks for it on startup and shows a warning if it is missing.
+- [Node.js](https://nodejs.org/) v18 or later — required **only** when building/running from source. End users don't need it: the packaged installer already bundles the Electron runtime and all npm runtime dependencies.
 - A running Gitea server with a personal access token ([how to create a token](https://docs.gitea.com/development/api-usage#generating-and-listing-api-tokens))
 
 ## Installation
@@ -93,7 +93,7 @@ You must do this before build，or all things you are doing will not change
 npx electron-builder --win
 ```
 
-The installer will be generated in the `dist-electron/` directory.
+The installer will be generated in the `release/` directory (e.g. `release/Gitea Desktop Setup <version>.exe`). It bundles the Electron runtime and all npm runtime dependencies, so whoever installs it does not need Node.js or `npm install` — only Git has to be installed separately (see [Prerequisites](#prerequisites)).
 
 ## Usage
 

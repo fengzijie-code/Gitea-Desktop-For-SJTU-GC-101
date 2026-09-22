@@ -25,7 +25,7 @@ export default function ReleasesPage() {
       const data = await window.electronAPI.gitea.listReleases(
         account.serverUrl, account.token, info.owner, info.repo
       );
-      setReleases(data);
+      setReleases(Array.isArray(data) ? data : []);
     } catch (err: any) {
       setError(err.message);
     } finally {

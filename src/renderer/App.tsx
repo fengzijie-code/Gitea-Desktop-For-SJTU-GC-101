@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, useAppContext } from './context/AppContext';
 import Sidebar from './components/Sidebar';
@@ -13,11 +13,31 @@ import './styles/global.css';
 
 function AppContent() {
   const { currentRepo, error, setError } = useAppContext();
+  const [gitMissing, setGitMissing] = useState(false);
+
+  const checkGit = useCallback(() => {
+    window.electronAPI.git
+      .checkGit()
+      .then((result) => setGitMissing(!result.installed))
+      .catch(() => setGitMissing(true));
+  }, []);
+
+  useEffect(() => {
+    checkGit();
+  }, [checkGit]);
 
   return (
     <div className="app-layout">
       <Sidebar />
       <main className="main-content">
+        {gitMissing && (
+          <div className="git-warning-banner">
+            <span className="error-banner-text">
+              未检测到 Git。请先安装 Git for Windows（https://git-scm.com/download/win），并确保 git 已加入系统 PATH，否则克隆、提交、推送等所有 Git 操作都无法使用。
+            </span>
+            <button onClick={checkGit}>重新检测</button>
+          </div>
+        )}
         {error && (
           <div className="error-banner">
             <span className="error-banner-text">{error}</span>
