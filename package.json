@@ -1,6 +1,6 @@
 {
   "name": "gitea-desktop",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "A GitHub Desktop-like client for Gitea",
   "main": "dist/main/main.js",
   "scripts": {

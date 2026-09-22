@@ -34,8 +34,13 @@ function findSshCommand(): string | undefined {
 
 const sshCommand = findSshCommand();
 
+// WSL 仓库（\\wsl.localhost\...）里的文件属主是 Linux 用户，Git for Windows 会判定为
+// "dubious ownership" 并直接拒绝操作（fatal: detected dubious ownership in repository）。
+// 这里通过 -c 只在本次 git 调用中放宽该检查，不去改用户的全局 git 配置。
+const GIT_CONFIG_SAFE_DIRECTORY = 'safe.directory=*';
+
 function getGit(repoPath: string): SimpleGit {
-  const git = simpleGit(repoPath);
+  const git = simpleGit({ baseDir: repoPath, config: [GIT_CONFIG_SAFE_DIRECTORY] });
   if (sshCommand) git.env('GIT_SSH_COMMAND', sshCommand);
   return git;
 }
@@ -43,7 +48,7 @@ function getGit(repoPath: string): SimpleGit {
 export function registerGitHandlers() {
   ipcMain.handle('git:clone', async (_event, url: string, targetPath: string) => {
     try {
-      const git = simpleGit();
+      const git = simpleGit({ config: [GIT_CONFIG_SAFE_DIRECTORY] });
       if (sshCommand) git.env('GIT_SSH_COMMAND', sshCommand);
       await git.clone(url, targetPath);
       return { success: true };
@@ -378,7 +383,7 @@ export function registerGitHandlers() {
 
   ipcMain.handle('git:get-user-name', async () => {
     try {
-      const git = simpleGit();
+      const git = simpleGit({ config: [GIT_CONFIG_SAFE_DIRECTORY] });
       const name = await git.raw(['config', 'user.name']);
       return name.trim();
     } catch {
