@@ -271,7 +271,7 @@ export default function SettingsPage() {
 
       <section className="settings-section">
         <h3>About</h3>
-        <p>Gitea Desktop v1.4.0</p>
+        <p>Gitea Desktop v1.5.0</p>
         <p>A desktop client for Gitea, inspired by GitHub Desktop.</p>
       </section>
     </div>

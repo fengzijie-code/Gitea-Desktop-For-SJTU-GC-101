@@ -47,9 +47,25 @@ interface GiteaAPI {
 }
 
 interface FileAPI {
-  selectDirectory(): Promise<string | null>;
+  selectDirectory(defaultPath?: string): Promise<string | null>;
   readConfig(): Promise<AppConfig>;
   writeConfig(config: AppConfig): Promise<{ success: boolean }>;
+}
+
+interface WslDistro {
+  name: string;
+  root: string;
+  home: string | null;
+}
+
+interface WslInfo {
+  available: boolean;
+  distros: WslDistro[];
+  error?: string;
+}
+
+interface WslAPI {
+  listDistros(): Promise<WslInfo>;
 }
 
 interface ShellAPI {
@@ -147,6 +163,7 @@ declare global {
       git: GitAPI;
       gitea: GiteaAPI;
       file: FileAPI;
+      wsl: WslAPI;
       shell: ShellAPI;
       app: {
         reloadHome(): Promise<void>;

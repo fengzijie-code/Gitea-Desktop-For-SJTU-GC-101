@@ -206,6 +206,50 @@ body {
   letter-spacing: 0.5px;
 }
 
+.wsl-distro-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 12px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wsl-hint {
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.wsl-distro-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+}
+
+.wsl-distro-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.wsl-distro-name {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.wsl-distro-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
 .repo-dropdown-item {
   display: flex;
   flex-direction: column;

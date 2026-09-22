@@ -3,6 +3,7 @@ import path from 'path';
 import { registerGitHandlers } from './git-handlers';
 import { registerGiteaHandlers } from './gitea-handlers';
 import { registerFileHandlers } from './file-handlers';
+import { registerWslHandlers } from './wsl-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -44,6 +45,7 @@ app.whenReady().then(() => {
   registerGitHandlers();
   registerGiteaHandlers();
   registerFileHandlers();
+  registerWslHandlers();
 
   ipcMain.handle('app:reload-home', () => {
     loadHome();

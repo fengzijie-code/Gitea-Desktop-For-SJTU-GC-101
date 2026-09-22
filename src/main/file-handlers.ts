@@ -6,9 +6,12 @@ import path from 'path';
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 
 export function registerFileHandlers() {
-  ipcMain.handle('file:select-directory', async () => {
+  ipcMain.handle('file:select-directory', async (_event, defaultPath?: string) => {
+    // defaultPath lets callers open the picker directly inside a WSL (UNC) location,
+    // which Windows' folder dialog does not list in its navigation pane.
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
+      defaultPath: defaultPath || undefined,
     });
     if (result.canceled) return null;
     return result.filePaths[0];

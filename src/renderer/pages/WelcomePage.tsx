@@ -9,6 +9,9 @@ export default function WelcomePage() {
   const [cloning, setCloning] = useState(false);
   const [cloneError, setCloneError] = useState('');
   const [initializing, setInitializing] = useState(false);
+  const [showWsl, setShowWsl] = useState(false);
+  const [wslLoading, setWslLoading] = useState(false);
+  const [wslInfo, setWslInfo] = useState<WslInfo | null>(null);
 
   const [repoName, setRepoName] = useState('');
   const [repoDescription, setRepoDescription] = useState('');
@@ -26,10 +29,8 @@ export default function WelcomePage() {
     });
   }, []);
 
-  const handleOpenLocal = async () => {
-    const dir = await window.electronAPI.file.selectDirectory();
-    if (!dir) return;
-    const name = dir.split(/[\\/]/).pop() || dir;
+  const openRepo = async (dir: string) => {
+    const name = dir.split(/[\\/]/).filter(Boolean).pop() || dir;
     const repo: SavedRepository = {
       path: dir,
       name,
@@ -38,6 +39,31 @@ export default function WelcomePage() {
     await addRepository(repo);
     setCurrentRepo(repo);
     navigate('/changes');
+  };
+
+  const handleOpenLocal = async () => {
+    const dir = await window.electronAPI.file.selectDirectory();
+    if (!dir) return;
+    await openRepo(dir);
+  };
+
+  const handleToggleWsl = async () => {
+    const next = !showWsl;
+    setShowWsl(next);
+    if (!next || wslInfo) return;
+    setWslLoading(true);
+    try {
+      setWslInfo(await window.electronAPI.wsl.listDistros());
+    } finally {
+      setWslLoading(false);
+    }
+  };
+
+  const handlePickWsl = async (distro: WslDistro) => {
+    // Windows 文件夹对话框的导航栏不列 WSL，用 defaultPath 直接把对话框开在该发行版里
+    const dir = await window.electronAPI.file.selectDirectory(distro.home || distro.root);
+    if (!dir) return;
+    await openRepo(dir);
   };
 
   const handleClone = async () => {
@@ -137,6 +163,30 @@ export default function WelcomePage() {
             <button className="btn-secondary" onClick={handleOpenLocal}>
               Open Local Repository
             </button>
+          </div>
+
+          <div className="welcome-card">
+            <h3>Open a WSL Repository</h3>
+            <p>直接从 WSL 发行版里选择仓库目录（Windows 文件对话框默认不显示 WSL）。</p>
+            <button className="btn-secondary" onClick={handleToggleWsl}>
+              {showWsl ? '收起' : '检测 WSL 发行版'}
+            </button>
+            {showWsl && (
+              <div className="wsl-distro-list">
+                {wslLoading ? (
+                  <div className="wsl-hint">检测中…</div>
+                ) : !wslInfo || !wslInfo.available || wslInfo.distros.length === 0 ? (
+                  <div className="wsl-hint">{wslInfo?.error || '未检测到 WSL 发行版'}</div>
+                ) : (
+                  wslInfo.distros.map((d) => (
+                    <button key={d.name} className="wsl-distro-item" onClick={() => handlePickWsl(d)}>
+                      <span className="wsl-distro-name">{d.name}</span>
+                      <span className="wsl-distro-path">{d.home || d.root}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           <div className="welcome-card">

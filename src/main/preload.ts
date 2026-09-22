@@ -78,9 +78,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('gitea:create-release', serverUrl, token, owner, repo, options),
   },
   file: {
-    selectDirectory: () => ipcRenderer.invoke('file:select-directory'),
+    selectDirectory: (defaultPath?: string) => ipcRenderer.invoke('file:select-directory', defaultPath),
     readConfig: () => ipcRenderer.invoke('file:read-config'),
     writeConfig: (config: any) => ipcRenderer.invoke('file:write-config', config),
+  },
+  wsl: {
+    listDistros: () => ipcRenderer.invoke('wsl:list-distros'),
   },
   shell: {
     openInVSCode: (repoPath: string) =>
