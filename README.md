@@ -2,6 +2,8 @@
 
 A desktop Git client for [Gitea](https://gitea.io) servers, inspired by GitHub Desktop. Built with Electron, React, and TypeScript.
 
+**English** | [简体中文](./README_zh.md)
+
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
 ![Electron](https://img.shields.io/badge/Electron-28-47848F)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
@@ -28,7 +30,31 @@ As a GC engr101 student, our homework and project are all upload onto Focs Gitea
 
 - [Git](https://git-scm.com/) installed and available in your system PATH — **required at runtime**. Gitea Desktop shells out to the `git` executable for every Git operation, and `git` is **not** bundled in the installer. The app checks for it on startup and shows a warning if it is missing.
 - [Node.js](https://nodejs.org/) v18 or later — required **only** when building/running from source. End users don't need it: the packaged installer already bundles the Electron runtime and all npm runtime dependencies.
-- A running Gitea server with a personal access token ([how to create a token](https://docs.gitea.com/development/api-usage#generating-and-listing-api-tokens))
+- A running Gitea server plus **one** of the two credentials below — you do **not** need both. See [Which Gitea Credential Do You Need?](#which-gitea-credential-do-you-need) for the details.
+  - **Personal access token** ([how to create a token](https://docs.gitea.com/development/api-usage#generating-and-listing-api-tokens)) — needed for everything the app does through the Gitea API, and (since v1.5.3) also for Git operations on **HTTPS** remotes.
+  - **SSH key** — only needed when a repository's remote URL is in SSH form.
+
+## Which Gitea Credential Do You Need?
+
+Gitea Desktop reaches Gitea in **two independent ways**, and they use **different** credentials. Setting up only one of them is perfectly normal.
+
+| What you do in the app | Credential required | Where to create it in Gitea |
+|---|---|---|
+| Repository list, Issues, Releases, "New repository" | **Access token** | **Settings → Applications → Generate New Token** |
+| `clone` / `push` / `pull` / `fetch` on an **HTTPS** remote (`https://host/owner/repo.git`) | **Access token** (same one) | **Settings → Applications → Generate New Token** |
+| `clone` / `push` / `pull` / `fetch` on an **SSH** remote (`ssh://git@host:2222/owner/repo.git` or `git@host:owner/repo.git`) | **SSH key** | **Settings → SSH / GPG Keys** (paste your **public** key) |
+
+- **The access token is what you normally need.** Add it once under **Settings → Gitea Accounts** in the app; it is used for every Gitea API call *and* for every Git operation on HTTPS remotes (the token is injected per invocation as an `http.extraHeader`, so it never ends up in `.git/config` or in the remote URL).
+- **An SSH/GPG key is only needed for SSH remotes.** Gitea's "Clone" box hands out an SSH URL by default; if you clone with that URL, plain `git` authenticates with the private key in `~/.ssh` (on Windows: `C:\Users\<you>\.ssh`), and the matching **public** key must be registered under **Settings → SSH / GPG Keys**. The app itself never asks you for a key — it just lets `git` do it.
+- **The app cannot type a passphrase or password for you.** It is launched without a terminal, so an SSH key protected by a passphrase only works if it is already unlocked in a running `ssh-agent`, and server-side password authentication can never be used. That is why HTTPS + token is the safer default.
+- **Prefer not to deal with SSH keys at all?** Open a repository, go to the app's **Settings → 远程仓库 / 认证方式** section and click **改用 HTTPS + Token**. The app rewrites `origin` to the HTTPS form and pushes with your saved access token; the neighbouring button switches the remote back to SSH. (The SSH URL is taken from the Gitea API so the port is preserved.)
+
+How to tell the two apart when something fails:
+
+| Error | Most likely cause |
+|---|---|
+| `Permission denied (publickey,password)` / `Could not read from remote repository` | You are on an SSH remote and no usable, registered key was offered → add your public key under **Settings → SSH / GPG Keys**, or switch the remote to HTTPS + token. |
+| `Authentication failed`, or `404 Not Found` on an HTTPS remote | The access token is missing, expired, or has no **write** access to that repository. (Gitea answers 404 rather than 403 for repositories the caller may not see.) |
 
 ## Installation
 
@@ -103,9 +129,11 @@ When you first launch the app, you'll see the **Welcome** page.
 
 1. Go to **Settings** (via the sidebar).
 2. Enter your Gitea server URL (e.g., `https://gitea.example.com`).
-3. Enter your **Personal Access Token**.
+3. Enter your **Personal Access Token** (Gitea → **Settings → Applications → Generate New Token**). This is the token — *not* an SSH key — the app asks for here.
 4. Click **Test Connection** to verify.
 5. Save the configuration.
+
+> This token covers the Gitea API and Git operations on HTTPS remotes. If you clone with an SSH URL instead, you additionally need your public key under Gitea → **Settings → SSH / GPG Keys**; see [Which Gitea Credential Do You Need?](#which-gitea-credential-do-you-need).
 
 ### 2. Clone a Repository
 
@@ -127,6 +155,13 @@ When you first launch the app, you'll see the **Welcome** page.
 - Use the **Push** button in the toolbar to push commits to the remote.
 - Use the **Pull** button to fetch and merge remote changes.
 - Use **Fetch** to check for remote updates without merging.
+
+Which credential those buttons use is decided by the `origin` URL, not by the app:
+
+- `https://…` → your saved **access token** is used automatically (no prompt).
+- `ssh://…` or `git@host:…` → the SSH key in `~/.ssh` is used and must be registered on the server.
+
+If SSH is not set up, open **Settings → 远程仓库 / 认证方式** and switch `origin` to HTTPS with one click.
 
 ### 5. Branch Management
 
@@ -226,6 +261,33 @@ git --version
 ```
 
 If this command fails, [install Git](https://git-scm.com/download/win) and restart the application.
+
+### `Permission denied (publickey,password)` when pushing
+
+The remote is an SSH URL but no usable, registered SSH key was offered. Two ways out:
+
+1. Register the key: print your public key and paste it into Gitea → **Settings → SSH / GPG Keys**.
+
+   ```bash
+   # Windows PowerShell
+   Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub
+   ```
+
+   Verify from a terminal before retrying in the app:
+
+   ```bash
+   ssh -T -p 2222 git@your-gitea-host
+   ```
+
+   A message like `Hi there, <user>! You've successfully authenticated…` means the key is fine.
+
+2. Or drop SSH entirely: open the repository, go to **Settings → 远程仓库 / 认证方式**, click **改用 HTTPS + Token**, then push again.
+
+Note that a passphrase-protected key must already be unlocked in an `ssh-agent` — the app has no terminal and cannot ask you for the passphrase.
+
+### `Authentication failed` or `404 Not Found` on an HTTPS remote
+
+The access token is missing, expired, or has no write access to that repository. Create a new token with the `repo` scope under Gitea → **Settings → Applications**, then re-add the account in the app. Note that Gitea answers `404` (not `403`) for private repositories the caller is not allowed to see, so "repository not found" usually means "wrong token", not "typo".
 
 ## License
 
