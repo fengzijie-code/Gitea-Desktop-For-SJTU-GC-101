@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { DEFAULT_SCOPES } from '../components/CommitForm';
 
 export default function SettingsPage() {
-  const { config, addAccount, removeAccount, updateConfig, currentRepo } = useAppContext();
+  const { config, addAccount, removeAccount, updateConfig, currentRepo, getRepoInfo } = useAppContext();
   const [serverUrl, setServerUrl] = useState('');
   const [token, setToken] = useState('');
   const [testing, setTesting] = useState(false);
@@ -13,6 +13,11 @@ export default function SettingsPage() {
   const [gitEmail, setGitEmail] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
   const [configResult, setConfigResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [remoteUrl, setRemoteUrl] = useState('');
+  const [remoteTick, setRemoteTick] = useState(0);
+  const [switchingRemote, setSwitchingRemote] = useState(false);
+  const [remoteResult, setRemoteResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const [newScope, setNewScope] = useState('');
   const scopes = config.customScopes && config.customScopes.length > 0 ? config.customScopes : DEFAULT_SCOPES;
@@ -54,6 +59,93 @@ export default function SettingsPage() {
       setSavingConfig(false);
     }
   };
+
+  useEffect(() => {
+    if (!currentRepo) {
+      setRemoteUrl('');
+      return;
+    }
+    window.electronAPI.git
+      .getRemotes(currentRepo.path)
+      .then((remotes) => {
+        const origin = remotes.find((r) => r.name === 'origin');
+        setRemoteUrl(origin?.refs.fetch || '');
+      })
+      .catch(() => setRemoteUrl(''));
+  }, [currentRepo, remoteTick]);
+
+  const isHttpsRemote = /^https?:\/\//i.test(remoteUrl);
+
+  const hostOf = (value: string): string => {
+    const raw = (value || '').trim();
+    if (!raw) return '';
+    try {
+      if (/^https?:\/\//i.test(raw)) return new URL(raw).host.toLowerCase();
+    } catch {
+      // fall through to the ssh / scp syntax
+    }
+    const m = raw.match(/^(?:[a-z+.-]+:\/\/)?(?:[^@/]+@)?([^/:]+)/i);
+    return m ? m[1].toLowerCase() : '';
+  };
+
+  const accountForRemote: { serverUrl: string; token: string; username?: string } | undefined =
+    config.accounts.find(
+      (a: { serverUrl: string }) => hostOf(a.serverUrl) === hostOf(remoteUrl),
+    ) || config.accounts[0];
+
+  const buildTargetUrl = async (toHttps: boolean): Promise<string> => {
+    const info = await getRepoInfo();
+    if (info && accountForRemote) {
+      try {
+        const repo = await window.electronAPI.gitea.getRepo(
+          accountForRemote.serverUrl,
+          accountForRemote.token,
+          info.owner,
+          info.repo,
+        );
+        const url = toHttps ? repo.clone_url : repo.ssh_url;
+        if (url) return url;
+      } catch {
+        // API unreachable - fall back to rewriting the URL locally
+      }
+    }
+    if (toHttps) {
+      const m = remoteUrl.match(/^(?:[a-z+.-]+:\/\/)?(?:[^@/]+@)?([^/:]+)(?::\d+)?[:/](.+)$/i);
+      if (m) return `https://${m[1]}/${m[2]}`;
+    } else {
+      const m = remoteUrl.match(/^https?:\/\/([^/]+)\/(.+)$/i);
+      if (m) return `git@${m[1]}:${m[2]}`;
+    }
+    throw new Error('无法推导目标地址，请手动执行 git remote set-url origin <url>');
+  };
+
+  const handleSwitchRemote = async (toHttps: boolean) => {
+    if (!currentRepo || !remoteUrl) return;
+    setSwitchingRemote(true);
+    setRemoteResult(null);
+    try {
+      const url = await buildTargetUrl(toHttps);
+      await window.electronAPI.git.setRemoteUrl(currentRepo.path, 'origin', url);
+      setRemoteUrl(url);
+      const note = toHttps
+        ? accountForRemote
+          ? `推送/拉取将使用账户「${accountForRemote.username}」的 Access Token，无需 SSH 密钥。`
+          : '警告：未找到该服务器的账户，HTTPS 认证可能因缺少 Token 失败。'
+        : '推送/拉取将使用本机 SSH 密钥。';
+      setRemoteResult({ success: true, message: `origin 已切换为：${url}\n${note}` });
+    } catch (err: any) {
+      setRemoteResult({ success: false, message: err.message });
+    } finally {
+      setSwitchingRemote(false);
+      setRemoteTick((t) => t + 1);
+    }
+  };
+
+  const remoteModeLabel = !remoteUrl
+    ? '未设置 origin'
+    : isHttpsRemote
+      ? `HTTPS + Access Token${accountForRemote ? `（账户 ${accountForRemote.username}）` : '（未找到匹配账户）'}`
+      : 'SSH 密钥';
 
   const handleTest = async () => {
     if (!serverUrl.trim() || !token.trim()) return;
@@ -150,6 +242,48 @@ export default function SettingsPage() {
           </div>
         </section>
       )}
+
+      <section className="settings-section">
+        <h3>远程仓库 / 认证方式</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+          应用主进程没有终端，无法交互输入 SSH 口令或密码。若 SSH 推送报 Permission denied，
+          可把 origin 改为 HTTPS，用已保存的 Access Token 认证。
+        </p>
+        <div className="form-group">
+          <label>origin 地址</label>
+          <input type="text" value={remoteUrl} readOnly placeholder="未设置 origin" />
+        </div>
+        <div className="form-group">
+          <label>当前认证方式</label>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{remoteModeLabel}</div>
+        </div>
+
+        {remoteResult && (
+          <div
+            className={`test-result ${remoteResult.success ? 'success' : 'error'}`}
+            style={{ whiteSpace: 'pre-line' }}
+          >
+            {remoteResult.message}
+          </div>
+        )}
+
+        <div className="form-actions">
+          <button
+            className="btn-primary"
+            onClick={() => handleSwitchRemote(true)}
+            disabled={switchingRemote || !remoteUrl || isHttpsRemote}
+          >
+            改用 HTTPS + Token
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={() => handleSwitchRemote(false)}
+            disabled={switchingRemote || !remoteUrl || !isHttpsRemote}
+          >
+            改用 SSH
+          </button>
+        </div>
+      </section>
 
       <section className="settings-section">
         <h3>Commit Scopes</h3>
@@ -271,7 +405,7 @@ export default function SettingsPage() {
 
       <section className="settings-section">
         <h3>About</h3>
-        <p>Gitea Desktop v1.5.1</p>
+        <p>Gitea Desktop v1.5.3</p>
         <p>A desktop client for Gitea, inspired by GitHub Desktop.</p>
       </section>
     </div>

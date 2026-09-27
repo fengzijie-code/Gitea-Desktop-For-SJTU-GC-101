@@ -5,6 +5,17 @@ import path from 'path';
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 
+export function readAppConfig(): any {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+    }
+  } catch {
+    // ignore
+  }
+  return { accounts: [], repositories: [] };
+}
+
 export function registerFileHandlers() {
   ipcMain.handle('file:select-directory', async (_event, defaultPath?: string) => {
     // defaultPath lets callers open the picker directly inside a WSL (UNC) location,
@@ -18,15 +29,7 @@ export function registerFileHandlers() {
   });
 
   ipcMain.handle('file:read-config', async () => {
-    try {
-      if (fs.existsSync(CONFIG_PATH)) {
-        const data = fs.readFileSync(CONFIG_PATH, 'utf-8');
-        return JSON.parse(data);
-      }
-    } catch {
-      // ignore
-    }
-    return { accounts: [], repositories: [] };
+    return readAppConfig();
   });
 
   ipcMain.handle('file:write-config', async (_event, config: any) => {

@@ -27,6 +27,7 @@ interface GitAPI {
   getRemotes(repoPath: string): Promise<RemoteInfo[]>;
   init(options: InitRepoOptions): Promise<{ success: boolean; repoPath: string }>;
   addRemote(repoPath: string, name: string, url: string): Promise<{ success: boolean }>;
+  setRemoteUrl(repoPath: string, name: string, url: string): Promise<{ success: boolean }>;
   getInitTemplates(): Promise<{ gitignoreTemplates: string[]; licenseTemplates: string[] }>;
   getUserName(): Promise<string>;
   checkGit(): Promise<{ installed: boolean; version?: string; error?: string }>;

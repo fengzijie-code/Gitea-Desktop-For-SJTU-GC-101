@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('git:init', options),
     addRemote: (repoPath: string, name: string, url: string) =>
       ipcRenderer.invoke('git:add-remote', repoPath, name, url),
+    setRemoteUrl: (repoPath: string, name: string, url: string) =>
+      ipcRenderer.invoke('git:set-remote-url', repoPath, name, url),
     getInitTemplates: () =>
       ipcRenderer.invoke('git:get-init-templates'),
     getUserName: () =>

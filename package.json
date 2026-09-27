@@ -1,7 +1,11 @@
 {
   "name": "gitea-desktop",
-  "version": "1.5.1",
+  "version": "1.5.3",
   "description": "A GitHub Desktop-like client for Gitea",
+  "author": {
+    "name": "Lucas Feng",
+    "email": "fengzijie@sjtu.edu.cn"
+  },
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",

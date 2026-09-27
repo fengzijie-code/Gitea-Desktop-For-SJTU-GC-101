@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { gitignoreTemplates } from './templates/gitignore';
 import { licenseTemplates } from './templates/license';
+import { readAppConfig } from './file-handlers';
 
 export interface InitRepoOptions {
   name: string;
@@ -15,46 +16,109 @@ export interface InitRepoOptions {
   authorName?: string;
 }
 
-function findSshCommand(): string | undefined {
-  if (process.platform !== 'win32') return undefined;
-
-  if (process.env.GIT_SSH_COMMAND) return process.env.GIT_SSH_COMMAND;
-  if (process.env.GIT_SSH) return undefined;
-
-  const candidates = [
-    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'usr', 'bin', 'ssh.exe'),
-    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Git', 'usr', 'bin', 'ssh.exe'),
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'usr', 'bin', 'ssh.exe'),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return `"${p}"`;
-  }
-  return undefined;
-}
-
-const sshCommand = findSshCommand();
-
 // WSL 仓库（\\wsl.localhost\...）里的文件属主是 Linux 用户，Git for Windows 会判定为
 // "dubious ownership" 并直接拒绝操作（fatal: detected dubious ownership in repository）。
 // 这里通过 -c 只在本次 git 调用中放宽该检查，不去改用户的全局 git 配置。
 const GIT_CONFIG_SAFE_DIRECTORY = 'safe.directory=*';
 
-function getGit(repoPath: string): SimpleGit {
-  const git = simpleGit({ baseDir: repoPath, config: [GIT_CONFIG_SAFE_DIRECTORY] });
-  if (sshCommand) git.env('GIT_SSH_COMMAND', sshCommand);
-  return git;
+/**
+ * Every git invocation goes through here.
+ *
+ * Important: do NOT use `git.env()` for anything (that is how an earlier version passed
+ * GIT_SSH_COMMAND / GIT_CONFIG_COUNT). simple-git's "block unsafe operations" plugin
+ * (>= 3.36) rejects those env vars - and `env()` *replaces* the whole child environment
+ * rather than merging it - so a single `env()` call makes **every** git command fail,
+ * not just network ones. Per-call settings must be passed as `-c` entries instead.
+ */
+function getGit(repoPath: string, extraConfig: string[] = []): SimpleGit {
+  return simpleGit({
+    baseDir: repoPath,
+    config: [GIT_CONFIG_SAFE_DIRECTORY, ...extraConfig],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// HTTPS authentication with the stored Gitea access token
+// ---------------------------------------------------------------------------
+// Every git call here is spawned by the main process, which has no terminal attached.
+// That makes SSH unusable whenever the key is missing/unauthorised or protected by a
+// passphrase (the prompt can never be answered). For HTTPS remotes we can instead
+// authenticate non-interactively with the access token the user already saved.
+
+function hostOfUrl(value: string): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  try {
+    if (/^https?:\/\//i.test(raw)) return new URL(raw).host.toLowerCase();
+  } catch {
+    // not a parsable http(s) URL - try the scp/ssh syntax below
+  }
+  // ssh://git@host:2222/owner/repo.git | git@host:owner/repo.git | host:owner/repo.git
+  const match = raw.match(/^(?:[a-z+.-]+:\/\/)?(?:[^@/]+@)?([^/:]+)/i);
+  return match ? match[1].toLowerCase() : '';
+}
+
+function findAccountForUrl(url: string): { serverUrl: string; token: string; username?: string } | null {
+  const host = hostOfUrl(url);
+  if (!host) return null;
+  const accounts = (readAppConfig().accounts || []) as {
+    serverUrl: string;
+    token: string;
+    username?: string;
+  }[];
+  return accounts.find((a) => a.token && hostOfUrl(a.serverUrl) === host) || null;
+}
+
+/**
+ * Returns the `-c` entries needed to authenticate against an HTTPS remote with the
+ * saved access token. Passed per invocation, so the token is never persisted in
+ * .git/config nor embedded in the remote URL. Empty for non-HTTPS remotes.
+ */
+function tokenConfigFor(url?: string): string[] {
+  if (!url || !/^https?:\/\//i.test(url)) return [];
+  const account = findAccountForUrl(url);
+  if (!account) return [];
+  return [`http.extraHeader=Authorization: token ${account.token}`];
+}
+
+async function remoteUrlOf(git: SimpleGit, remote: string): Promise<string | undefined> {
+  try {
+    const remotes = await git.getRemotes(true);
+    return remotes.find((r) => r.name === remote)?.refs.fetch;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Re-throws git errors with an actionable hint for the most common auth failures. */
+function rethrowWithHint(err: any): never {
+  const message: string = err?.message || String(err);
+  let hint: string | null = null;
+
+  if (/permission denied|publickey|could not read from remote repository/i.test(message)) {
+    hint =
+      'SSH 认证失败：本机没有可用的私钥，或该公钥未添加到 Gitea 账户 / 对该仓库无写权限。' +
+      '可在「设置 → 远程仓库」改用 HTTPS + Access Token 推送（无需 SSH 密钥）。';
+  } else if (/authentication failed|could not read username|401|403/i.test(message)) {
+    hint = 'HTTP 认证失败：Access Token 无效、已过期或权限不足（需要 repo 写权限）。';
+  } else if (/not found/i.test(message)) {
+    // Gitea answers 404 (not 403) for private repositories the caller may not see,
+    // so "not found" is frequently an auth/permission problem rather than a typo.
+    hint = '仓库未找到：若这是私有仓库，通常是 Token 无效或权限不足（Gitea 对无权访问的仓库也返回 not found）。';
+  }
+
+  throw new Error(hint ? `${message}\n\n${hint}` : message);
 }
 
 export function registerGitHandlers() {
   ipcMain.handle('git:clone', async (_event, url: string, targetPath: string) => {
     try {
-      const git = simpleGit({ config: [GIT_CONFIG_SAFE_DIRECTORY] });
-      if (sshCommand) git.env('GIT_SSH_COMMAND', sshCommand);
+      const git = simpleGit({ config: [GIT_CONFIG_SAFE_DIRECTORY, ...tokenConfigFor(url)] });
       await git.clone(url, targetPath);
       return { success: true };
     } catch (err: any) {
       console.error('[git:clone]', err.message);
-      throw err;
+      rethrowWithHint(err);
     }
   });
 
@@ -121,44 +185,54 @@ export function registerGitHandlers() {
   });
 
   ipcMain.handle('git:push', async (_event, repoPath: string, remote?: string, branch?: string) => {
+    const target = remote || 'origin';
     try {
-      const git = getGit(repoPath);
+      const url = await remoteUrlOf(getGit(repoPath), target);
+      const git = getGit(repoPath, tokenConfigFor(url));
       if (branch) {
-        await git.push(remote || 'origin', branch);
+        await git.push(target, branch);
       } else {
-        await git.push(remote || 'origin');
+        await git.push(target);
       }
       return { success: true };
     } catch (err: any) {
       console.error('[git:push]', err.message);
-      throw err;
+      rethrowWithHint(err);
     }
   });
 
   ipcMain.handle('git:pull', async (_event, repoPath: string, remote?: string, branch?: string) => {
+    const target = remote || 'origin';
     try {
-      const git = getGit(repoPath);
+      const url = await remoteUrlOf(getGit(repoPath), target);
+      const git = getGit(repoPath, tokenConfigFor(url));
       if (branch) {
-        const result = await git.pull(remote || 'origin', branch);
+        const result = await git.pull(target, branch);
         return { success: true, summary: result.summary };
       } else {
-        const result = await git.pull(remote || 'origin');
+        const result = await git.pull(target);
         return { success: true, summary: result.summary };
       }
     } catch (err: any) {
       console.error('[git:pull]', err.message);
-      throw err;
+      rethrowWithHint(err);
     }
   });
 
-  ipcMain.handle('git:fetch', async (_event, repoPath: string) => {
+  ipcMain.handle('git:fetch', async (_event, repoPath: string, remote?: string) => {
+    const target = remote || 'origin';
     try {
-      const git = getGit(repoPath);
-      await git.fetch();
+      const url = await remoteUrlOf(getGit(repoPath), target);
+      const git = getGit(repoPath, tokenConfigFor(url));
+      if (target === 'origin') {
+        await git.fetch();
+      } else {
+        await git.fetch(target);
+      }
       return { success: true };
     } catch (err: any) {
       console.error('[git:fetch]', err.message);
-      throw err;
+      rethrowWithHint(err);
     }
   });
 
@@ -358,6 +432,22 @@ export function registerGitHandlers() {
       return { success: true };
     } catch (err: any) {
       console.error('[git:add-remote]', err.message);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('git:set-remote-url', async (_event, repoPath: string, name: string, url: string) => {
+    try {
+      const git = getGit(repoPath);
+      const remotes = await git.getRemotes(true);
+      if (remotes.some((r) => r.name === name)) {
+        await git.remote(['set-url', name, url]);
+      } else {
+        await git.addRemote(name, url);
+      }
+      return { success: true };
+    } catch (err: any) {
+      console.error('[git:set-remote-url]', err.message);
       throw err;
     }
   });
